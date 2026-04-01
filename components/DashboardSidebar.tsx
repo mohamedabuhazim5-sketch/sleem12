@@ -14,6 +14,7 @@ export default async function DashboardSidebar() {
     { label: 'FAQ', href: '/dashboard/faq' },
     { label: 'Conversations', href: '/dashboard/conversations' },
     { label: 'Billing', href: '/dashboard/billing' },
+    { label: 'Connect WhatsApp', href: '/dashboard/connect-whatsapp' },
   ]
 
   const adminLinks = [
