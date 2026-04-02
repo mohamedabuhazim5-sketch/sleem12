@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getBotReply } from '@/lib/bot'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { saveIncomingLead } from '@/lib/messages'
-import { createAdminClient } from '@/lib/supabase-admin'
+import { supabase } from '@/lib/supabase'
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
@@ -19,10 +19,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createAdminClient()
     const body = await req.json()
 
-    const message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
+    const change = body?.entry?.[0]?.changes?.[0]?.value
+    const message = change?.messages?.[0]
 
     if (!message) {
       return NextResponse.json({ received: true })
@@ -35,14 +35,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
-    const { data: clinic } = await supabase
+    const incomingPhoneNumberId = change?.metadata?.phone_number_id
+
+    if (!incomingPhoneNumberId) {
+      return NextResponse.json(
+        { error: 'Missing phone_number_id' },
+        { status: 400 }
+      )
+    }
+
+    const { data: clinic, error: clinicError } = await supabase
       .from('clinics')
       .select('*')
-      .limit(1)
+      .eq('whatsapp_phone_number_id', incomingPhoneNumberId)
       .single()
 
-    if (!clinic) {
-      return NextResponse.json({ received: true })
+    if (clinicError || !clinic) {
+      return NextResponse.json(
+        { error: 'Clinic not found for this WhatsApp number' },
+        { status: 404 }
+      )
     }
 
     await saveIncomingLead({
@@ -53,8 +65,13 @@ export async function POST(req: NextRequest) {
 
     const reply = await getBotReply(text, clinic.id)
 
-    if (reply) {
-      await sendWhatsAppMessage(from, reply)
+    if (reply && clinic.whatsapp_access_token && clinic.whatsapp_phone_number_id) {
+      await sendWhatsAppMessage({
+        phoneNumberId: clinic.whatsapp_phone_number_id,
+        accessToken: clinic.whatsapp_access_token,
+        to: from,
+        text: reply,
+      })
     }
 
     return NextResponse.json({ received: true })
